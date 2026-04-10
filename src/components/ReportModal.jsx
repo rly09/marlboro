@@ -1,4 +1,4 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Camera, X, UploadCloud, MapPin, Sparkles } from 'lucide-react';
 import { GlassCard } from './GlassCard';
@@ -9,19 +9,39 @@ import { cn } from '../lib/utils';
 export const ReportModal = ({ isOpen, onClose }) => {
   const { addReport } = useContext(AppContext);
   const [step, setStep] = useState(1);
-  const [image, setImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [file, setFile] = useState(null);
   const [severity, setSeverity] = useState('Medium');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [coords, setCoords] = useState({ lat: 51.5, lng: -0.1 }); // Default fallback
+  const fileInputRef = useRef(null);
 
-  // Mock lat/long slightly randomized near London for demo
-  const mockLat = 51.5 + (Math.random() * 0.04 - 0.02);
-  const mockLng = -0.1 + (Math.random() * 0.04 - 0.02);
+  const captureLocation = () => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCoords({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        },
+        (error) => console.error("Error getting location:", error),
+        { enableHighAccuracy: true }
+      );
+    }
+  };
 
   const handleImageUpload = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+
+    setFile(selectedFile);
+    setImagePreview(URL.createObjectURL(selectedFile));
     setIsAnalyzing(true);
+    captureLocation();
+
     // Simulate AI delay
     setTimeout(() => {
-      setImage('https://images.unsplash.com/photo-1611284446314-60a58ac0deb9?auto=format&fit=crop&w=400&q=80');
       setSeverity('High');
       setIsAnalyzing(false);
       setStep(2);
@@ -30,17 +50,18 @@ export const ReportModal = ({ isOpen, onClose }) => {
 
   const handleSubmit = () => {
     addReport({
-      lat: mockLat,
-      lng: mockLng,
+      lat: coords.lat,
+      lng: coords.lng,
       severity,
-      img: image,
+      file,
       description: 'User reported waste',
-      aiInsight: severity === 'High' ? 'Plastic waste detected - High priority' : null
+      aiInsight: severity === 'High' ? 'Waste detected - High priority' : 'General waste report'
     });
     onClose();
     setTimeout(() => {
       setStep(1);
-      setImage(null);
+      setImagePreview(null);
+      setFile(null);
       setSeverity('Medium');
     }, 500);
   };
@@ -78,8 +99,16 @@ export const ReportModal = ({ isOpen, onClose }) => {
                     "border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center text-center cursor-pointer transition-all duration-300",
                     isAnalyzing ? "border-emerald-500/50 bg-emerald-500/5" : "border-white/20 hover:border-emerald-400/50 hover:bg-white/5"
                   )}
-                  onClick={handleImageUpload}
+                  onClick={() => fileInputRef.current?.click()}
                 >
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleImageUpload}
+                  />
                   {isAnalyzing ? (
                     <>
                       <Sparkles className="w-12 h-12 text-emerald-400 mb-4 animate-pulse" />
@@ -89,14 +118,14 @@ export const ReportModal = ({ isOpen, onClose }) => {
                     <>
                       <UploadCloud className="w-12 h-12 text-white/50 mb-4 group-hover:text-emerald-400 transition-colors" />
                       <p className="text-white/80 font-medium mb-1">Click to Capture/Upload</p>
-                      <p className="text-white/50 text-sm">Takes &lt; 5 seconds</p>
+                      <p className="text-white/50 text-sm">Real-time GPS acquisition</p>
                     </>
                   )}
                 </div>
               ) : (
                 <div className="space-y-6">
                   <div className="relative rounded-xl overflow-hidden h-40">
-                    <img src={image} alt="Uploaded" className="w-full h-full object-cover" />
+                    <img src={imagePreview} alt="Uploaded" className="w-full h-full object-cover" />
                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-emerald-400" />
