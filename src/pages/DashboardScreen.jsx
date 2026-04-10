@@ -25,9 +25,15 @@ export const DashboardScreen = () => {
           <h1 className="text-3xl font-bold text-white tracking-tight">Dashboard</h1>
           <p className="text-white/50 mt-1">Hello, Eco Warrior 👋</p>
         </div>
-        <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-2xl">
-          <Trophy className="w-5 h-5 text-emerald-400" />
-          <span className="text-emerald-400 font-semibold">{userStats.points} pts</span>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2 bg-emerald-500/10 border border-emerald-500/20 px-4 py-2 rounded-2xl shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+            <Trophy className="w-5 h-5 text-emerald-400" />
+            <span className="text-emerald-400 font-semibold">{userStats.points} pts</span>
+          </div>
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 shadow-[0_0_15px_rgba(249,115,22,0.2)]">
+            <span className="animate-pulse">🔥</span>
+            <span className="text-xs font-semibold text-orange-400">{userStats.streak} Days Streak</span>
+          </div>
         </div>
       </header>
 

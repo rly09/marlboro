@@ -39,9 +39,24 @@ const iconMap = {
   High: createCustomIcon('#ef4444', true),
 };
 
+import MarkerClusterGroup from 'react-leaflet-cluster';
+
+// Custom cluster icon to match neon styling
+const createClusterCustomIcon = function (cluster) {
+  const count = cluster.getChildCount();
+  return L.divIcon({
+    html: `<div class="bg-emerald-500/20 text-emerald-400 font-bold border-2 border-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.6)] w-12 h-12 rounded-full flex items-center justify-center">${count}</div>`,
+    className: 'custom-marker-cluster',
+    iconSize: L.point(48, 48, true),
+  });
+};
+
 export const MapScreen = () => {
   const { reports } = useContext(AppContext);
   const [selectedReport, setSelectedReport] = useState(null);
+
+  // Example of finding nearby tasks (just using state length for MVP display)
+  const nearbyCount = reports.filter(r => r.status === 'Pending').length;
 
   return (
     <div className="relative w-full h-screen bg-background">
@@ -61,16 +76,22 @@ export const MapScreen = () => {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         
-        {reports.map((report) => (
-          <Marker 
-            key={report.id} 
-            position={[report.lat, report.lng]}
-            icon={iconMap[report.severity]}
-            eventHandlers={{
-              click: () => setSelectedReport(report),
-            }}
-          />
-        ))}
+        <MarkerClusterGroup
+          chunkedLoading
+          iconCreateFunction={createClusterCustomIcon}
+          maxClusterRadius={50}
+        >
+          {reports.map((report) => (
+            <Marker 
+              key={report.id} 
+              position={[report.lat, report.lng]}
+              icon={iconMap[report.severity]}
+              eventHandlers={{
+                click: () => setSelectedReport(report),
+              }}
+            />
+          ))}
+        </MarkerClusterGroup>
       </MapContainer>
 
       <TaskModal 

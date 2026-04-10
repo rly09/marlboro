@@ -92,22 +92,47 @@ export const TaskModal = ({ report, onClose }) => {
                 </div>
               </div>
 
+              {/* Smart Insights Section */}
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <div className="bg-white/5 border border-white/10 p-3 rounded-xl">
+                  <p className="text-xs text-white/50 mb-1">Estimated Cleanup</p>
+                  <p className="text-sm font-semibold text-white/90">
+                    {report.severity === 'High' ? '2-3 hours' : report.severity === 'Medium' ? '45 mins' : '15 mins'}
+                  </p>
+                </div>
+                <div className="bg-white/5 border border-white/10 p-3 rounded-xl">
+                  <p className="text-xs text-white/50 mb-1">Nearby Tasks (500m)</p>
+                  <p className="text-sm font-semibold text-blue-400">3 Cleanups</p>
+                </div>
+              </div>
+
               <p className="text-sm text-white/70">{report.description}</p>
 
               {report.status === 'Pending' && (
-                <button
-                  onClick={handleClaim}
-                  disabled={isClaiming}
-                  className="w-full py-3 mt-4 rounded-xl bg-gradient-to-r from-emerald-500 to-blue-500 text-white font-semibold shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] hover:scale-[1.02] transition-all duration-300 flex items-center justify-center gap-2"
-                >
-                  {isClaiming ? (
-                    <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-                      <Sparkles className="w-5 h-5" />
-                    </motion.div>
-                  ) : (
-                    "Claim Cleanup Task"
-                  )}
-                </button>
+                <div className="relative mt-4 h-14 bg-white/5 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center group">
+                  <span className="text-white/40 text-sm font-medium pr-12">Swipe arrow to claim &rarr;</span>
+                  <motion.div
+                    drag="x"
+                    dragConstraints={{ left: 0, right: 280 }}
+                    dragElastic={0.05}
+                    dragSnapToOrigin
+                    onDragEnd={(e, info) => {
+                      if (info.offset.x > 200 && !isClaiming) {
+                        handleClaim();
+                      }
+                    }}
+                    className="absolute left-1 top-1 bottom-1 w-12 bg-gradient-to-r from-emerald-500 to-blue-500 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.4)] flex items-center justify-center cursor-grab active:cursor-grabbing z-10"
+                  >
+                    {isClaiming ? (
+                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
+                        <Sparkles className="w-5 h-5 text-white" />
+                      </motion.div>
+                    ) : (
+                      <span className="text-white">→</span>
+                    )}
+                  </motion.div>
+                  <div className="absolute left-0 top-0 bottom-0 bg-emerald-500/20 -z-0 transition-opacity" style={{ width: '100%', opacity: isClaiming ? 1 : 0}}></div>
+                </div>
               )}
 
               {report.status === 'In Progress' && (
