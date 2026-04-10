@@ -1,9 +1,10 @@
-import { useContext, useState } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { useContext, useState, useEffect } from 'react';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { AppContext } from '../context/AppContext';
 import { TaskModal } from '../components/TaskModal';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 
 // Fix typical Leaflet icon issue
 delete L.Icon.Default.prototype._getIconUrl;
@@ -33,13 +34,23 @@ const createCustomIcon = (color, isPulsing = false) => {
   });
 };
 
+const userIcon = L.divIcon({
+  className: 'user-icon',
+  html: `
+    <div class="relative">
+      <div class="absolute -inset-2 bg-blue-500/30 rounded-full animate-ping"></div>
+      <div class="relative bg-blue-500 w-4 h-4 rounded-full border-2 border-white shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
+    </div>
+  `,
+  iconSize: [16, 16],
+  iconAnchor: [8, 8],
+});
+
 const iconMap = {
   Low: createCustomIcon('#10b981'),
   Medium: createCustomIcon('#f97316'),
   High: createCustomIcon('#ef4444', true),
 };
-
-import MarkerClusterGroup from 'react-leaflet-cluster';
 
 // Custom cluster icon to match neon styling
 const createClusterCustomIcon = function (cluster) {
@@ -51,12 +62,25 @@ const createClusterCustomIcon = function (cluster) {
   });
 };
 
+const LocationMarker = () => {
+  const [position, setPosition] = useState(null);
+  const map = useMap();
+
+  useEffect(() => {
+    map.locate().on("locationfound", function (e) {
+      setPosition(e.latlng);
+      map.flyTo(e.latlng, map.getZoom());
+    });
+  }, [map]);
+
+  return position === null ? null : (
+    <Marker position={position} icon={userIcon} />
+  );
+};
+
 export const MapScreen = () => {
   const { reports } = useContext(AppContext);
   const [selectedReport, setSelectedReport] = useState(null);
-
-  // Example of finding nearby tasks (just using state length for MVP display)
-  const nearbyCount = reports.filter(r => r.status === 'Pending').length;
 
   return (
     <div className="relative w-full h-screen bg-background">
@@ -76,6 +100,8 @@ export const MapScreen = () => {
           url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         />
         
+        <LocationMarker />
+
         <MarkerClusterGroup
           chunkedLoading
           iconCreateFunction={createClusterCustomIcon}
