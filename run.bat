@@ -1,16 +1,20 @@
 @echo off
-echo ==============================================
-echo Installing Dependencies and Starting CleanCity
-echo ==============================================
+echo ================================
+echo   CleanCity AI - Starting Up
+echo ================================
 
-echo [1/3] Installing Node.js dependencies...
-call npm install
+REM Start the FastAPI backend
+echo [1/2] Starting Python backend (http://127.0.0.1:8000)...
+start "CleanCity Backend" cmd /k "cd backend && ..\venv\Scripts\python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000"
 
-echo [2/3] Installing Python dependencies...
-python -m pip install -r requirements.txt
+timeout /t 3 /nobreak > nul
 
-echo [3/3] Starting Backend and Frontend...
-start cmd /k "python -m uvicorn backend.main:app --reload"
-start cmd /k "npm run dev"
+REM Start the Flutter web frontend
+echo [2/2] Starting Flutter Web frontend...
+start "CleanCity Frontend" cmd /k "cd frontend && flutter run -d chrome --web-port 5173"
 
-echo Done! The app should open momentarily in your browser.
+echo.
+echo Both services are starting...
+echo   Backend:  http://127.0.0.1:8000
+echo   Frontend: http://localhost:5173
+echo.

@@ -2,3 +2,6 @@ fastapi
 uvicorn
 sqlalchemy
 python-multipart
+cerebras-cloud-sdk
+ultralytics
+python-dotenv

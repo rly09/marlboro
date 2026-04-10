@@ -9,6 +9,8 @@ class User(Base):
     points = Column(Integer, default=0)
     streak = Column(Integer, default=0)
     badges = Column(String(255), default="[]") # simple JSON list string
+    trust_score = Column(Integer, default=100)
+    total_cleanups = Column(Integer, default=0)
 
 class Report(Base):
     __tablename__ = "reports"
@@ -20,3 +22,5 @@ class Report(Base):
     img = Column(String(255))
     description = Column(Text)
     aiInsight = Column(String(255), nullable=True)
+    after_img = Column(String(255), nullable=True)
+    claimed_by_name = Column(String(50), nullable=True)

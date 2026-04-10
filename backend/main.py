@@ -1,14 +1,31 @@
 import os
 import json
 import random
-from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, Depends, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from typing import List
 from sqlalchemy.orm import Session
 from . import models, schemas, database
 from .database import engine
+from dotenv import load_dotenv
+from cerebras.cloud.sdk import Cerebras
+from ultralytics import YOLO
+
+load_dotenv()
 
 models.Base.metadata.create_all(bind=engine)
+
+# Initialize YOLOv8 and Cerebras Client
+try:
+    yolo_model = YOLO("yolov8n.pt")
+except Exception as e:
+    print(f"Warning: YOLO failed to load: {e}")
+    yolo_model = None
+
+cerebras_client = None
+if os.getenv("CEREBRAS_API_KEY"):
+    cerebras_client = Cerebras(api_key=os.getenv("CEREBRAS_API_KEY"))
 
 app = FastAPI(title="CleanCity AI API")
 
@@ -25,31 +42,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict):
+        for connection in self.active_connections:
+            try:
+                await connection.send_json(message)
+            except:
+                pass
+
+ws_manager = ConnectionManager()
+
+@app.websocket("/api/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
 # Seed initial user if not exists
 def seed_user(db: Session):
     user = db.query(models.User).filter(models.User.is_me == 1).first()
     if not user:
-        user = models.User(name="Yogi", is_me=1, points=250, streak=3, badges=json.dumps(['Eco Warrior', 'City Saver']))
+        user = models.User(name="Yogi", is_me=1, points=250, streak=3, badges=json.dumps(['Eco Warrior', 'City Saver']), trust_score=100, total_cleanups=5)
         db.add(user)
         # Add some mock users for leaderboard
-        db.add(models.User(name="Sarah M.", is_me=0, points=1250, streak=12, badges=json.dumps(['Eco Warrior'])))
-        db.add(models.User(name="David K.", is_me=0, points=840, streak=5, badges=json.dumps(['City Saver'])))
-        db.add(models.User(name="Emma W.", is_me=0, points=620, streak=2, badges=json.dumps(['Scout'])))
+        db.add(models.User(name="Sarah M.", is_me=0, points=1250, streak=12, badges=json.dumps(['Eco Warrior']), trust_score=110, total_cleanups=30))
+        db.add(models.User(name="David K.", is_me=0, points=840, streak=5, badges=json.dumps(['City Saver']), trust_score=95, total_cleanups=15))
+        db.add(models.User(name="Emma W.", is_me=0, points=620, streak=2, badges=json.dumps(['Scout']), trust_score=100, total_cleanups=8))
         db.commit()
         
     # Seed reports — coordinates around SRM University, Kattankulathur
     if db.query(models.Report).count() == 0:
+        # Keep only a few "high quality" examples for initial WOW factor
         dummy_reports = [
-            # Main Gate area — SRM main entrance, Kattankulathur
-            models.Report(lat=12.8231, lng=80.0442, severity="High", img="https://images.unsplash.com/photo-1595278069441-2cf29f8005a4?auto=format&fit=crop&w=400&q=80", description="Overflowing garbage bin at SRM main gate entrance — immediate attention required.", aiInsight="Plastic waste detected - High priority", status="Pending"),
-            # Tech Park Block area
-            models.Report(lat=12.8218, lng=80.0455, severity="Medium", img="https://images.unsplash.com/photo-1621451537084-482c73073e0f?auto=format&fit=crop&w=400&q=80", description="Cardboard and paper waste piled near the Tech Park block, SRM campus.", aiInsight="Organic/Paper waste detected - Medium priority", status="Pending"),
-            # SRM Library
-            models.Report(lat=12.8243, lng=80.0428, severity="Low", img="https://images.unsplash.com/photo-1528323273322-d81458248d40?auto=format&fit=crop&w=400&q=80", description="Scattered wrappers and litter found near SRM central library.", aiInsight="Low severity debris", status="Pending"),
-            # SRM Food Court
-            models.Report(lat=12.8209, lng=80.0461, severity="High", img="https://images.unsplash.com/photo-1530587191325-3db32d826c18?auto=format&fit=crop&w=400&q=80", description="Hazardous liquid waste dumped near SRM food court alleyway — biohazard risk.", aiInsight="Hazardous material detected - Critical", status="Pending"),
-            # SRM Hostel Block
-            models.Report(lat=12.8255, lng=80.0415, severity="Medium", img="https://images.unsplash.com/photo-1604187351574-c75ca79f5807?auto=format&fit=crop&w=400&q=80", description="Abandoned trolley filled with mixed garbage outside SRM hostel block C.", aiInsight="Mixed waste - Medium priority", status="Pending")
+            models.Report(lat=12.8231, lng=80.0442, severity="High", img="https://images.unsplash.com/photo-1595278069441-2cf29f8005a4?auto=format&fit=crop&w=400&q=80", description="Overflowing garbage bin at SRM main gate - identified by Cerebras AI.", aiInsight="Mixed waste detected. High priority for sanitary clearance.", status="Pending"),
+            models.Report(lat=12.8218, lng=80.0455, severity="Medium", img="https://images.unsplash.com/photo-1621451537084-482c73073e0f?auto=format&fit=crop&w=400&q=80", description="Industrial waste accumulation near tech park site.", aiInsight="Cardboard and plastic scrap detected.", status="Pending"),
         ]
         for r in dummy_reports:
             db.add(r)
@@ -82,14 +123,62 @@ async def create_report(
 
     img_url = f"/api/uploads/{filename}"
 
-    # Simulated AI Detection
-    ai_insights_options = [
-        ("Plastic waste detected - High priority", "High"),
-        ("Organic/Paper waste detected - Medium priority", "Medium"),
-        ("Hazardous material detected - Critical", "High"),
-        ("Low severity debris", "Low")
-    ]
-    insight, severity = random.choice(ai_insights_options)
+    # --- STEP 1: Vision analysis using local YOLO ---
+    detections = []
+    if yolo_model:
+        results = yolo_model(filepath)
+        for r in results:
+            for box in r.boxes:
+                cls = int(box.cls[0])
+                name = yolo_model.names[cls]
+                detections.append(name)
+    
+    detection_summary = ", ".join(set(detections)) if detections else "general waste items"
+
+    # --- STEP 2: Reasoning using Cerebras ---
+    insight = "Garbage detected. Pending verification."
+    
+    # Rule-based fallback for severity (prevents everything being 'Medium')
+    object_count = len(detections)
+    if object_count > 5:
+        severity = "High"
+    elif object_count == 0 and not description:
+        severity = "Low"
+    else:
+        severity = "Medium"
+
+    if cerebras_client:
+        try:
+            prompt = f"""
+            Analyze this civic garbage report and provide a JSON response.
+            Detected objects: {detection_summary}
+            User description: {description}
+            
+            Guidelines:
+            - HIGH: Hazardous, huge pile, blocking road, medical waste, or foul smell.
+            - MEDIUM: General household waste, overflowing bin, scattered litter.
+            - LOW: Single small item, non-hazardous plastic, dry waste.
+
+            Response format:
+            {{
+                "severity": "Low" | "Medium" | "High",
+                "insight": "Short professional assessment (max 12 words)"
+            }}
+            """
+            response = cerebras_client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama3.1-70b",
+                response_format={ "type": "json_object" }
+            )
+            res_data = json.loads(response.choices[0].message.content)
+            severity = res_data.get("severity", severity) # Use fallback if not provided
+            insight = res_data.get("insight", "AI analyzed waste detected.")
+        except Exception as e:
+            print(f"Cerebras Error: {e}")
+            insight = f"Analysis complete: {detection_summary} detected."
+    else:
+        insight = f"Detected: {detection_summary}. (Enable Cerebras for deep insights)"
+        # Keep the heuristic severity if Cerebras is off
 
     db_report = models.Report(
         lat=lat,
@@ -103,10 +192,18 @@ async def create_report(
     db.add(db_report)
     db.commit()
     db.refresh(db_report)
+    
+    # Broadcast new report
+    import asyncio
+    asyncio.create_task(ws_manager.broadcast({
+        "event": "report_new",
+        "data": schemas.ReportResponse.from_orm(db_report).dict()
+    }))
+    
     return db_report
 
 @app.put("/api/reports/{id}/claim")
-def claim_task(id: int, db: Session = Depends(database.get_db)):
+async def claim_task(id: int, db: Session = Depends(database.get_db)):
     report = db.query(models.Report).filter(models.Report.id == id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
@@ -116,23 +213,62 @@ def claim_task(id: int, db: Session = Depends(database.get_db)):
     user = db.query(models.User).filter(models.User.is_me == 1).first()
     if user:
         user.points += 10
+        report.claimed_by_name = user.name
     
     db.commit()
+    db.refresh(report)
+
+    await ws_manager.broadcast({
+        "event": "report_updated",
+        "data": schemas.ReportResponse.from_orm(report).dict()
+    })
+    await ws_manager.broadcast({"event": "leaderboard_updated"})
+
     return {"status": "success"}
 
-@app.put("/api/reports/{id}/complete")
-def complete_task(id: int, db: Session = Depends(database.get_db)):
+@app.post("/api/reports/{id}/complete")
+async def complete_task(
+    id: int, 
+    file: UploadFile = File(...), 
+    db: Session = Depends(database.get_db)
+):
     report = db.query(models.Report).filter(models.Report.id == id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
     
+    # Save After Image
+    if file:
+        filename = f"after_{random.randint(1000, 9999)}_{file.filename}"
+        filepath = os.path.join(UPLOAD_DIR, filename)
+        with open(filepath, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        report.after_img = f"/api/uploads/{filename}"
+    
     report.status = "Cleaned"
     
+    # Advanced Gamification Logic
+    points_to_add = 10
+    if report.severity == "High":
+        points_to_add = 50
+    elif report.severity == "Medium":
+        points_to_add = 25
+        
     user = db.query(models.User).filter(models.User.is_me == 1).first()
     if user:
-        user.points += 50
+        user.points += points_to_add
+        user.total_cleanups += 1
+        user.trust_score = min(200, user.trust_score + 2) # small trust bump upon proof
     
     db.commit()
+    db.refresh(report)
+    
+    await ws_manager.broadcast({
+        "event": "report_updated",
+        "data": schemas.ReportResponse.from_orm(report).dict()
+    })
+    await ws_manager.broadcast({"event": "leaderboard_updated"})
+    
     return {"status": "success"}
 
 @app.get("/api/user/stats", response_model=schemas.UserStats)
@@ -142,7 +278,14 @@ def get_user_stats(db: Session = Depends(database.get_db)):
         raise HTTPException(status_code=404, detail="User not found")
     
     badges = json.loads(user.badges)
-    return schemas.UserStats(name=user.name, points=user.points, streak=user.streak, badges=badges)
+    return schemas.UserStats(
+        name=user.name, 
+        points=user.points, 
+        streak=user.streak, 
+        badges=badges, 
+        trust_score=user.trust_score, 
+        total_cleanups=user.total_cleanups
+    )
 
 @app.get("/api/leaderboard", response_model=list[schemas.UserLeaderboard])
 def get_leaderboard(db: Session = Depends(database.get_db)):
@@ -151,5 +294,12 @@ def get_leaderboard(db: Session = Depends(database.get_db)):
     for u in users:
         badges = json.loads(u.badges)
         badge = badges[0] if badges else "Novice"
-        leaderboard.append(schemas.UserLeaderboard(name=u.name, points=u.points, badge=badge, isMe=bool(u.is_me)))
+        leaderboard.append(schemas.UserLeaderboard(
+            name=u.name, 
+            points=u.points, 
+            badge=badge, 
+            isMe=bool(u.is_me),
+            trust_score=u.trust_score,
+            total_cleanups=u.total_cleanups
+        ))
     return leaderboard
