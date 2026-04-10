@@ -1,5 +1,5 @@
-import { useContext, useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import { useContext, useState, useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { AppContext } from '../context/AppContext';
@@ -78,6 +78,24 @@ const LocationMarker = () => {
   );
 };
 
+// Fly to a newly added report so it immediately appears on screen
+const FlyToLatestReport = ({ reports }) => {
+  const map = useMap();
+  const prevLen = useRef(reports.length);
+
+  useEffect(() => {
+    if (reports.length > prevLen.current) {
+      const latest = reports[reports.length - 1];
+      if (latest?.lat && latest?.lng) {
+        map.flyTo([latest.lat, latest.lng], 17, { duration: 1.5 });
+      }
+    }
+    prevLen.current = reports.length;
+  }, [reports, map]);
+
+  return null;
+};
+
 export const MapScreen = () => {
   const { reports } = useContext(AppContext);
   const [selectedReport, setSelectedReport] = useState(null);
@@ -90,8 +108,8 @@ export const MapScreen = () => {
       </div>
 
       <MapContainer 
-        center={[51.505, -0.09]} 
-        zoom={13} 
+        center={[12.8231, 80.0444]} 
+        zoom={16} 
         className="w-full h-full"
         zoomControl={false}
       >
@@ -101,13 +119,14 @@ export const MapScreen = () => {
         />
         
         <LocationMarker />
+        <FlyToLatestReport reports={reports} />
 
         <MarkerClusterGroup
           chunkedLoading
           iconCreateFunction={createClusterCustomIcon}
           maxClusterRadius={50}
         >
-          {reports.map((report) => (
+          {reports.filter(report => report.status !== 'Cleaned').map((report) => (
             <Marker 
               key={report.id} 
               position={[report.lat, report.lng]}
